@@ -1,0 +1,1 @@
+A rudimentary recreation of SQLite written in Rust. This is a personal project based on a CodeCrafters challenge.
