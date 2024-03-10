@@ -1,31 +1,59 @@
 use std::env;
-use std::fs::File;
-use std::io::prelude::*;
+use std::error::Error;
+use std::fmt;
 
-use anyhow::{bail, Result};
+use rusqlite::dbinfo;
 
-fn main() -> Result<()> {
+#[derive(Debug)]
+enum CMDError {
+    DBPathNotGiven,
+    NoCommandGiven,
+    InvalidCommand(String),
+}
+
+impl fmt::Display for CMDError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            CMDError::DBPathNotGiven => write!(f, "Missing <database path>"),
+            CMDError::NoCommandGiven => write!(f, "Missing <command>"),
+            CMDError::InvalidCommand(cmd) => write!(f, "Missing or invalid command: <{}>", cmd),
+        }
+    }
+}
+
+impl Error for CMDError {}
+
+fn main() -> Result<(), Box<dyn Error>> {
     let args = env::args().collect::<Vec<_>>();
     match args.len() {
-        0 | 1 => bail!("Missing <database path> and <command>"),
-        2 => bail!("Missing <command>"),
+        0 | 1 => {
+            eprintln!("{}", CMDError::DBPathNotGiven);
+            std::process::exit(1)
+        }
+        2 => {
+            eprintln!("{}", CMDError::NoCommandGiven);
+            std::process::exit(1)
+        }
         _ => {}
     }
 
     let command = &args[2];
     match command.as_str() {
         ".dbinfo" => {
-            let mut file = File::open(&args[1])?;
-            let mut header = [0; 100]; // an array of 100 zeroes
-            file.read_exact(&mut header)?; // read exactly enough bytes to fill `header`
+            let db_info = dbinfo::DBInfo::new(&args[1])?;
 
-            #[allow(unused_variables)]
-            let page_size = u16::from_be_bytes([header[16], header[17]]);
-
-            println!("database page size: {}", page_size);
+            println!(
+                "{:24}{:<1}\n{:24}{:<1}",
+                "database page size:",
+                db_info.db_page_size,
+                "database page count:",
+                db_info.db_page_count
+            );
         }
-
-        _ => bail!("Missing or invalid command: {}", command),
+        _ => {
+            eprintln!("{}", CMDError::InvalidCommand(command.clone()));
+            std::process::exit(1)
+        }
     }
 
     Ok(())
