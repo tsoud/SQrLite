@@ -2,7 +2,7 @@ use std::env;
 use std::error::Error;
 use std::fmt;
 
-use rusqlite::dbinfo;
+use rusqlite::{db::Database, dbinfo::DBInfo};
 
 #[derive(Debug)]
 enum CMDError {
@@ -40,7 +40,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let command = &args[2];
     match command.as_str() {
         ".dbinfo" => {
-            let db_info = dbinfo::DBInfo::new(&args[1])?;
+            let db = Database::new(&args[1])?;
+            let db_info = DBInfo::read_info(&db)?;
 
             println!(
                 "{:24}{:<1}\n{:24}{:<1}",
