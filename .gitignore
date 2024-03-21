@@ -1,2 +1,7 @@
 /target
 scratch*
+Chinook*
+northwind*
+/notes
+*.db
+*.sqlite
