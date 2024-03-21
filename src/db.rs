@@ -11,9 +11,10 @@ const DB_HEADER_SIZE: usize = 100;
 const HEADER_STRING_ARR: [u8; 16] = [
     0x53, 0x51, 0x4c, 0x69, 0x74, 0x65, 0x20, 0x66, 0x6f, 0x72, 0x6d, 0x61, 0x74, 0x20, 0x33, 0x00,
 ];
+// (offset, size) per SQLite database header format
 const HEADER_STR_SZ: (usize, usize) = (0, 16);
-const BTREE_HEADER_SIZE: usize = 8;
-const INTERIOR_BTREE_HEADER_SIZE: usize = BTREE_HEADER_SIZE + 4;
+const PG_SIZE: (usize, usize) = (16, 2);
+const PG_COUNT: (usize, usize) = (28, 4);
 
 #[derive(Debug)]
 struct InvalidDBFileError {
@@ -36,9 +37,12 @@ impl fmt::Display for InvalidDBFileError {
 
 impl Error for InvalidDBFileError {}
 
+#[derive(Debug)]
 pub struct Database {
     pub file: File,
     pub header: [u8; DB_HEADER_SIZE],
+    pub page_size: u16,
+    pub page_count: u32,
 }
 
 impl Database {
@@ -65,9 +69,25 @@ impl Database {
             })?;
         validate_db_file(header_str_arr).map_err(|e| e.to_string())?;
 
+        let pg_size_arr = header[(PG_SIZE.0)..(PG_SIZE.0 + PG_SIZE.1)]
+            .try_into()
+            .map_err(|e: std::array::TryFromSliceError| {
+                "error reading header: ".to_owned() + &e.to_string()
+            })?;
+        let page_size = u16::from_be_bytes(pg_size_arr);
+
+        let pg_count_arr = header[(PG_COUNT.0)..(PG_COUNT.0 + PG_COUNT.1)]
+            .try_into()
+            .map_err(|e: std::array::TryFromSliceError| {
+                "error reading header: ".to_owned() + &e.to_string()
+            })?;
+        let page_count = u32::from_be_bytes(pg_count_arr);
+
         Ok(Self {
-            file: file,
-            header: header,
+            file,
+            header,
+            page_size,
+            page_count,
         })
     }
 }
