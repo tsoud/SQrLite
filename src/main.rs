@@ -2,7 +2,7 @@ use std::env;
 use std::error::Error;
 use std::fmt;
 
-use rusqlite::db::Database;
+use sqrlite::db::Database;
 
 #[derive(Debug)]
 enum CMDError {
