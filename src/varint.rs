@@ -4,7 +4,7 @@ use std::error::Error;
 use std::fmt;
 
 #[derive(Debug)]
-struct MaxBytesExceededError {
+pub struct MaxBytesExceededError {
     details: String,
 }
 
@@ -28,68 +28,50 @@ impl fmt::Display for MaxBytesExceededError {
 
 impl Error for MaxBytesExceededError {}
 
-#[derive(Debug)]
-pub struct Varint {
-    value: u64,
-    byte_sequence: Vec<u8>,
-    size: usize,
+// Encode an unsigned integer up to 64 bits in size to a big-endian varint
+pub fn encode_be<T>(value: T) -> (Vec<u8>, usize)
+where
+    T: Into<u64>,
+{
+    let mut result: Vec<u8> = vec![];
+    let value_64bit: u64 = value.into();
+    let mut byte_value: u8;
+
+    for shift in (0..63).step_by(7).rev() {
+        byte_value = (value_64bit >> shift & 0x7f) as u8;
+        if shift != 0 {
+            if byte_value == 0 && result.len() == 0 {
+                continue;
+            }
+            result.push(byte_value | 0x80);
+        } else {
+            result.push(byte_value);
+        }
+    }
+
+    let size = result.len();
+    (result, size)
 }
 
-impl Varint {
-    // Encode an unsigned integer up to 64 bits in size to a big-endian varint
-    fn encode_be<T>(value: T) -> Self
-    where
-        T: Into<u64>,
-    {
-        let mut result: Vec<u8> = vec![];
-        let value_64bit: u64 = value.into();
-        let mut byte_value: u8;
+// Read a big-endian varint from a slice of bytes
+pub fn decode_be(input: &[u8]) -> Result<(u64, usize), MaxBytesExceededError> {
+    let mut result = 0u64;
+    let mut position = 0;
 
-        for shift in (0..63).step_by(7).rev() {
-            byte_value = (value_64bit >> shift & 0x7f) as u8;
-            if shift != 0 {
-                if byte_value == 0 && result.len() == 0 {
-                    continue;
-                }
-                result.push(byte_value | 0x80);
-            } else {
-                result.push(byte_value);
+    for &byte in input.iter() {
+        // If MSB is set, keep accumulat
+        if byte > 0x7f {
+            if position > 7 {
+                return Err(MaxBytesExceededError::new());
             }
-        }
-
-        let vec_size = result.len();
-
-        Self {
-            value: value_64bit,
-            byte_sequence: result,
-            size: vec_size,
+            result += u64::from(byte) ^ 0x80;
+            result <<= 7;
+            position += 1;
+        } else {
+            result += u64::from(byte);
+            break;
         }
     }
 
-    // Read a big-endian varint from a slice of bytes
-    fn decode_be(input: &[u8]) -> Result<Self, Box<dyn Error>> {
-        let mut result = 0u64;
-        let mut position = 0;
-
-        for &byte in input.iter() {
-            // If MSB is set, keep accumulat
-            if byte > 0x7f {
-                if position > 7 {
-                    return Err(Box::new(MaxBytesExceededError::new()));
-                }
-                result += u64::from(byte) ^ 0x80;
-                result <<= 7;
-                position += 1;
-            } else {
-                result += u64::from(byte);
-                break;
-            }
-        }
-
-        Ok(Self {
-            value: result,
-            byte_sequence: input[..=position].to_vec(),
-            size: position + 1,
-        })
-    }
+    Ok((result, position + 1))
 }
