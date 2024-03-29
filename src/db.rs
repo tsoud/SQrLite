@@ -11,10 +11,11 @@ const DB_HEADER_SIZE: usize = 100;
 const HEADER_STRING_ARR: [u8; 16] = [
     0x53, 0x51, 0x4c, 0x69, 0x74, 0x65, 0x20, 0x66, 0x6f, 0x72, 0x6d, 0x61, 0x74, 0x20, 0x33, 0x00,
 ];
-// (offset, size) per SQLite database header format
+// description (offset, size) per SQLite database header format
 const HEADER_STR_SZ: (usize, usize) = (0, 16);
 const PG_SIZE: (usize, usize) = (16, 2);
 const PG_COUNT: (usize, usize) = (28, 4);
+const RESERVED_SPACE: (usize, usize) = (20, 1);
 
 #[derive(Debug)]
 struct InvalidDBFileError {
@@ -43,6 +44,7 @@ pub struct Database {
     pub header: [u8; DB_HEADER_SIZE],
     pub page_size: u16,
     pub page_count: u32,
+    pub reserved_space: u8,
 }
 
 impl Database {
@@ -83,11 +85,19 @@ impl Database {
             })?;
         let page_count = u32::from_be_bytes(pg_count_arr);
 
+        let reserved_space_arr = header[(RESERVED_SPACE.0)..(RESERVED_SPACE.0 + RESERVED_SPACE.1)]
+            .try_into()
+            .map_err(|e: std::array::TryFromSliceError| {
+                "error reading header: ".to_owned() + &e.to_string()
+            })?;
+        let reserved_space = u8::from_be_bytes(reserved_space_arr);
+
         Ok(Self {
             file,
             header,
             page_size,
             page_count,
+            reserved_space,
         })
     }
 }
