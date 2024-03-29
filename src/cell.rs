@@ -24,6 +24,26 @@ pub struct Payload {
     pub overflow: Option<[u8; 4]>,
 }
 
+impl Payload {
+    pub fn calculate_spillage(&self, db: &Database, page: &BtreePage) -> u64 {
+        // Variables below are explained in SQLite documentation: https://www.sqlite.org/fileformat2.html#b_tree_pages
+        let p = self.size;
+        let u = db.page_size as u64 - db.reserved_space as u64;
+        let m = ((u - 12) * 32 / 255) - 23;
+        let k = m + ((p - m) % (u - 4));
+        let x = match page.page_type {
+            PageType::LeafTable => u - 35,
+            PageType::LeafIndex | PageType::InteriorIndex => ((u - 12) * 64 / 255) - 23,
+            _ => 0,
+        };
+        match p {
+            p if (p > x && k <= x) => p - k,
+            p if (p > x && k > x) => p - m,
+            _ => 0,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum CellContent {
     LeafTable {
