@@ -76,32 +76,29 @@ impl CellContent {
 
         match pg.page_type {
             PageType::LeafTable => {
-                let (rowid, payload) =
+                let (row_id, payload) =
                     parse_leaf_table_cell(cell, &mut cell_buf).map_err(|e| e.to_string())?;
-                Ok(CellContent::LeafTable {
-                    row_id: rowid,
-                    payload: payload,
-                })
+                Ok(CellContent::LeafTable { row_id, payload })
             }
             PageType::InteriorTable => {
-                let (left_child_ptr, int_key) =
+                let (left_child_ptr, integer_key) =
                     parse_interior_table_cell(&mut cell_buf).map_err(|e| e.to_string())?;
                 Ok(CellContent::InteriorTable {
-                    left_child_ptr: left_child_ptr,
-                    integer_key: int_key,
+                    left_child_ptr,
+                    integer_key,
                 })
             }
             PageType::LeafIndex => {
                 let payload =
                     parse_leaf_index_cell(cell, &mut cell_buf).map_err(|e| e.to_string())?;
-                Ok(CellContent::LeafIndex { payload: payload })
+                Ok(CellContent::LeafIndex { payload })
             }
             PageType::InteriorIndex => {
                 let (left_child_ptr, payload) =
                     parse_interior_index_cell(cell, &mut cell_buf).map_err(|e| e.to_string())?;
                 Ok(CellContent::InteriorIndex {
-                    left_child_ptr: left_child_ptr,
-                    payload: payload,
+                    left_child_ptr,
+                    payload,
                 })
             }
         }

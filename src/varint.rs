@@ -11,11 +11,10 @@ pub struct MaxBytesExceededError {
 impl MaxBytesExceededError {
     fn new() -> Self {
         Self {
-            details: format!(
-                "Input is invalid for this varint:\n\
-                For valid u64 values, the maximum number of bytes must be 9 or less \
-                and the last byte must not have a continuation flag (its value must be < 0x80)."
-            ),
+            details: "Input is invalid for this varint:\n\
+                For valid u64 values, the maximum number of bytes must be 9 or less and the last \
+                byte must not have a continuation flag (its value must be < 0x80)."
+                .to_string(),
         }
     }
 }
@@ -40,7 +39,7 @@ where
     for shift in (0..63).step_by(7).rev() {
         byte_value = (value_64bit >> shift & 0x7f) as u8;
         if shift != 0 {
-            if byte_value == 0 && result.len() == 0 {
+            if byte_value == 0 && result.is_empty() {
                 continue;
             }
             result.push(byte_value | 0x80);

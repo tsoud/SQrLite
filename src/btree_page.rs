@@ -39,7 +39,7 @@ struct PagesExceededError {
 impl PagesExceededError {
     fn new() -> Self {
         Self {
-            details: format!("number of pages in database exceeded"),
+            details: "number of pages in database exceeded".to_string(),
         }
     }
 }
