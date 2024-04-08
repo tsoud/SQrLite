@@ -2,6 +2,7 @@
 
 use std::{
     error::Error,
+    fmt,
     io::{BufReader, Read, Seek, SeekFrom},
 };
 
@@ -10,6 +11,30 @@ use crate::{
     db::Database,
     varint::decode_be,
 };
+
+#[derive(Debug)]
+pub struct InvalidFieldError {
+    details: String,
+}
+
+impl InvalidFieldError {
+    fn new(cell_type: &str, field_name: &str) -> Self {
+        Self {
+            details: format!(
+                "Type `{}` does not have a `{}` field",
+                cell_type, field_name
+            ),
+        }
+    }
+}
+
+impl fmt::Display for InvalidFieldError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.details)
+    }
+}
+
+impl Error for InvalidFieldError {}
 
 #[derive(Debug, Default)]
 pub struct Cell {
@@ -47,24 +72,32 @@ impl Payload {
 #[derive(Debug)]
 pub enum CellContent {
     LeafTable {
+        cell_type: &'static str,
         row_id: u64,
         payload: Payload,
     },
     LeafIndex {
+        cell_type: &'static str,
         payload: Payload,
     },
     InteriorIndex {
+        cell_type: &'static str,
         left_child_ptr: u32,
         payload: Payload,
     },
     InteriorTable {
+        cell_type: &'static str,
         left_child_ptr: u32,
         integer_key: u64,
     },
 }
 
 impl CellContent {
-    pub fn parse(pg: &BtreePage, db: &mut Database, cell: Cell) -> Result<Self, Box<dyn Error>> {
+    pub fn get_cell_data(
+        pg: &BtreePage,
+        db: &mut Database,
+        cell: Cell,
+    ) -> Result<Self, Box<dyn Error>> {
         let mut reader = BufReader::new(&db.file);
         reader
             .seek(SeekFrom::Start(pg.file_starting_position + cell.offset))
@@ -76,30 +109,72 @@ impl CellContent {
 
         match pg.page_type {
             PageType::LeafTable => {
+                let cell_type = "B-Tree Leaf Table";
                 let (row_id, payload) =
                     parse_leaf_table_cell(cell, &mut cell_buf).map_err(|e| e.to_string())?;
-                Ok(CellContent::LeafTable { row_id, payload })
+                Ok(CellContent::LeafTable {
+                    cell_type,
+                    row_id,
+                    payload,
+                })
             }
             PageType::InteriorTable => {
+                let cell_type = "B-Tree Interior Table";
                 let (left_child_ptr, integer_key) =
                     parse_interior_table_cell(&mut cell_buf).map_err(|e| e.to_string())?;
                 Ok(CellContent::InteriorTable {
+                    cell_type,
                     left_child_ptr,
                     integer_key,
                 })
             }
             PageType::LeafIndex => {
+                let cell_type = "B-Tree Leaf Index";
                 let payload =
                     parse_leaf_index_cell(cell, &mut cell_buf).map_err(|e| e.to_string())?;
-                Ok(CellContent::LeafIndex { payload })
+                Ok(CellContent::LeafIndex { cell_type, payload })
             }
             PageType::InteriorIndex => {
+                let cell_type = "B-Tree Interior Index";
                 let (left_child_ptr, payload) =
                     parse_interior_index_cell(cell, &mut cell_buf).map_err(|e| e.to_string())?;
                 Ok(CellContent::InteriorIndex {
+                    cell_type,
                     left_child_ptr,
                     payload,
                 })
+            }
+        }
+    }
+
+    pub fn get_payload(&self) -> Result<&[u8], InvalidFieldError> {
+        match self {
+            CellContent::LeafTable { payload, .. }
+            | CellContent::LeafIndex { payload, .. }
+            | CellContent::InteriorIndex { payload, .. } => Ok(&payload.payload),
+            CellContent::InteriorTable { cell_type, .. } => {
+                Err(InvalidFieldError::new(cell_type, "payload"))
+            }
+        }
+    }
+
+    pub fn get_left_child_pointer(&self) -> Result<u32, InvalidFieldError> {
+        match self {
+            CellContent::InteriorTable { left_child_ptr, .. }
+            | CellContent::InteriorIndex { left_child_ptr, .. } => Ok(*left_child_ptr),
+            CellContent::LeafTable { cell_type, .. } | CellContent::LeafIndex { cell_type, .. } => {
+                Err(InvalidFieldError::new(cell_type, "left_child_ptr"))
+            }
+        }
+    }
+
+    pub fn get_row_id(&self) -> Result<u64, InvalidFieldError> {
+        match self {
+            CellContent::LeafTable { row_id, .. } => Ok(*row_id),
+            CellContent::InteriorTable { cell_type, .. }
+            | CellContent::InteriorIndex { cell_type, .. }
+            | CellContent::LeafIndex { cell_type, .. } => {
+                Err(InvalidFieldError::new(cell_type, "row_id"))
             }
         }
     }
@@ -111,7 +186,10 @@ fn parse_leaf_table_cell(
 ) -> Result<(u64, Payload), Box<dyn Error>> {
     let mut payload = Payload::default();
     let mut varint_len: usize;
+    let mut position: usize = 0;
+
     (payload.size, varint_len) = decode_be(cell_buf).map_err(|e| e.to_string())?;
+    position += varint_len;
 
     if payload.size > cell.size as u64 {
         let overflow: [u8; 4] = cell_buf[cell_buf.len() - 4..].try_into()?;
@@ -119,11 +197,12 @@ fn parse_leaf_table_cell(
     }
 
     let rowid: u64;
-    (rowid, varint_len) = decode_be(&cell_buf[varint_len..]).map_err(|e| e.to_string())?;
+    (rowid, varint_len) = decode_be(&cell_buf[position..]).map_err(|e| e.to_string())?;
+    position += varint_len;
 
     payload.payload = match payload.overflow {
-        Some(_) => cell_buf[varint_len..cell_buf.len() - 4].to_vec(),
-        None => cell_buf[varint_len..].to_vec(),
+        Some(_) => cell_buf[position..cell_buf.len() - 4].to_vec(),
+        None => cell_buf[position..].to_vec(),
     };
     Ok((rowid, payload))
 }

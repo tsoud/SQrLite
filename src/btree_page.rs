@@ -1,10 +1,9 @@
 #![allow(dead_code)]
 
-// use std::fs::File;
 use std::io::{prelude::*, SeekFrom};
-// use std::os::unix::fs::FileExt;
 use std::{error::Error, fmt};
 
+use crate::cell::Cell;
 use crate::db::Database;
 
 const LEAF_BTREE_HEADER_SIZE: u8 = 8;
@@ -90,6 +89,7 @@ pub struct BtreePage {
     pub header_size: u8,
     pub header: [u8; 8],
     pub rightmost_ptr: Option<u32>,
+    page_size: u16, // for calculating cell sizes (from db)
 }
 
 impl Default for BtreePage {
@@ -104,6 +104,7 @@ impl Default for BtreePage {
             header_size: 8,
             header: [0u8; 8],
             rightmost_ptr: None,
+            page_size: 0,
         }
     }
 }
@@ -114,6 +115,7 @@ impl BtreePage {
         btree_pg
             .read_page_header(db, 1)
             .map_err(|e| e.to_string())?;
+        btree_pg.page_size = db.page_size;
         Ok(btree_pg)
     }
 
@@ -176,6 +178,27 @@ impl BtreePage {
         }
 
         Ok(())
+    }
+
+    pub fn get_page_cells(&self) -> Vec<Cell> {
+        let mut pointers = self.cell_pointers.clone();
+        pointers.sort_unstable();
+
+        pointers
+            .iter()
+            .enumerate()
+            .map(|(i, offset)| {
+                let size = if i == pointers.len() - 1 {
+                    self.page_size - offset
+                } else {
+                    pointers[i + 1] - offset
+                };
+                Cell {
+                    offset: *offset as u64,
+                    size: size as usize,
+                }
+            })
+            .collect::<Vec<Cell>>()
     }
 }
 
