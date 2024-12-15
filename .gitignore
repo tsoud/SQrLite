@@ -5,3 +5,4 @@ northwind*
 /notes
 *.db
 *.sqlite
+.idea/*
